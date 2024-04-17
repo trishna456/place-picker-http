@@ -1,17 +1,47 @@
-import { useRef, useState, useCallback } from 'react';
-
-import Places from './components/Places.jsx';
-import Modal from './components/Modal.jsx';
-import DeleteConfirmation from './components/DeleteConfirmation.jsx';
-import logoImg from './assets/logo.png';
-import AvailablePlaces from './components/AvailablePlaces.jsx';
+import { useRef, useState, useCallback, useEffect } from "react";
+import { updateUserPlaces, fetchUserPlaces } from "./http.js";
+import Places from "./components/Places.jsx";
+import Modal from "./components/Modal.jsx";
+import DeleteConfirmation from "./components/DeleteConfirmation.jsx";
+import logoImg from "./assets/logo.png";
+import AvailablePlaces from "./components/AvailablePlaces.jsx";
+import Error from "./components/Error.jsx";
 
 function App() {
   const selectedPlace = useRef();
 
   const [userPlaces, setUserPlaces] = useState([]);
-
+  const [isLoading, setIsLoading] = useState(false);
+  const [fetchingError, setFetchingError] = useState();
   const [modalIsOpen, setModalIsOpen] = useState(false);
+
+  const [errorUpdatingPlaces, setErrorUpdatingPlaces] = useState();
+
+  useEffect(() => {
+    async function fetchUserPlace() {
+      try {
+        setIsLoading(true);
+        const response = await fetchUserPlaces();
+        setUserPlaces(response);
+        setIsLoading(false);
+      } catch (error) {
+        setFetchingError({
+          message:
+            error.message ||
+            "Could not fetch user places. Please try again later.",
+        });
+        setIsLoading(false);
+      }
+    }
+
+    fetchUserPlace();
+  }, []);
+
+  if (fetchingError) {
+    return (
+      <Error title={"An error occurred!"} message={fetchingError.message} />
+    );
+  }
 
   function handleStartRemovePlace(place) {
     setModalIsOpen(true);
@@ -22,7 +52,9 @@ function App() {
     setModalIsOpen(false);
   }
 
-  function handleSelectPlace(selectedPlace) {
+  async function handleSelectPlace(selectedPlace) {
+    //optimistic updating
+    //we are first updating the local state and then sending the updates using the http put req
     setUserPlaces((prevPickedPlaces) => {
       if (!prevPickedPlaces) {
         prevPickedPlaces = [];
@@ -32,18 +64,54 @@ function App() {
       }
       return [selectedPlace, ...prevPickedPlaces];
     });
+
+    try {
+      await updateUserPlaces([selectedPlace, ...userPlaces]); //cannot directly pass the updated state immediately in this next line since state update has been scheduled for now
+    } catch (error) {
+      setUserPlaces(userPlaces); //if something goes wrong, we rollback to the previous state
+      setErrorUpdatingPlaces({ message: error || "Failed to update places." });
+    }
   }
 
-  const handleRemovePlace = useCallback(async function handleRemovePlace() {
-    setUserPlaces((prevPickedPlaces) =>
-      prevPickedPlaces.filter((place) => place.id !== selectedPlace.current.id)
-    );
+  const handleRemovePlace = useCallback(
+    async function handleRemovePlace() {
+      setUserPlaces((prevPickedPlaces) =>
+        prevPickedPlaces.filter(
+          (place) => place.id !== selectedPlace.current.id
+        )
+      );
 
-    setModalIsOpen(false);
-  }, []);
+      try {
+        await updateUserPlaces(
+          userPlaces.filter((place) => place.id !== selectedPlace.current.id)
+        );
+      } catch (error) {
+        setUserPlaces(userPlaces);
+        setErrorUpdatingPlaces({
+          message: error.message || "Failed to delete place.",
+        });
+      }
+
+      setModalIsOpen(false);
+    },
+    [userPlaces]
+  );
+
+  function handleError() {
+    setErrorUpdatingPlaces(null);
+  }
 
   return (
     <>
+      <Modal open={errorUpdatingPlaces} onClose={handleError}>
+        {errorUpdatingPlaces && (
+          <Error
+            title="An error occurred!"
+            message={errorUpdatingPlaces.message}
+            onConfirm={handleError}
+          />
+        )}
+      </Modal>
       <Modal open={modalIsOpen} onClose={handleStopRemovePlace}>
         <DeleteConfirmation
           onCancel={handleStopRemovePlace}
@@ -63,7 +131,9 @@ function App() {
         <Places
           title="I'd like to visit ..."
           fallbackText="Select the places you would like to visit below."
+          isLoading={isLoading}
           places={userPlaces}
+          loadingText="Loading user places.."
           onSelectPlace={handleStartRemovePlace}
         />
 
