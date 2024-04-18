@@ -1,4 +1,5 @@
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback } from "react";
+import { useFetch } from "./hooks/useFetch.js";
 import { updateUserPlaces, fetchUserPlaces } from "./http.js";
 import Places from "./components/Places.jsx";
 import Modal from "./components/Modal.jsx";
@@ -9,33 +10,16 @@ import Error from "./components/Error.jsx";
 
 function App() {
   const selectedPlace = useRef();
-
-  const [userPlaces, setUserPlaces] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [fetchingError, setFetchingError] = useState();
   const [modalIsOpen, setModalIsOpen] = useState(false);
-
   const [errorUpdatingPlaces, setErrorUpdatingPlaces] = useState();
 
-  useEffect(() => {
-    async function fetchUserPlace() {
-      try {
-        setIsLoading(true);
-        const response = await fetchUserPlaces();
-        setUserPlaces(response);
-        setIsLoading(false);
-      } catch (error) {
-        setFetchingError({
-          message:
-            error.message ||
-            "Could not fetch user places. Please try again later.",
-        });
-        setIsLoading(false);
-      }
-    }
-
-    fetchUserPlace();
-  }, []);
+  const {
+    isLoading,
+    fetchingError,
+    fetchedData: userPlaces,
+    setFetchedData: setUserPlaces,
+    //destructing the object, assignning an alias
+  } = useFetch(fetchUserPlaces, []);
 
   if (fetchingError) {
     return (
@@ -94,7 +78,9 @@ function App() {
 
       setModalIsOpen(false);
     },
-    [userPlaces]
+    [userPlaces, setUserPlaces]
+    //only adding setUserPlaces as a dependency to get rid of the warnings
+    //no need to actually add it because it is a state updating function and react will make sure that it will never change
   );
 
   function handleError() {
